@@ -1,0 +1,118 @@
+import requests
+import json
+from datetime import datetime, timedelta
+
+# Set up Agent CRM API parameters
+agent_crm_api_key = 'your_agent_crm_api_key'
+agent_crm_api_secret = 'your_agent_crm_api_secret'
+agent_crm_base_url = 'https://api.agentcrm.io/v1'
+
+# Set up Nexmo API parameters
+nexmo_api_key = 'your_nexmo_api_key'
+nexmo_api_secret = 'your_nexmo_api_secret'
+nexmo_from = 'your_nexmo_phone_number'
+
+# Set up email parameters
+smtp_server = 'your_smtp_server'
+smtp_port = 'your_smtp_port'
+smtp_username = 'your_smtp_username'
+smtp_password = 'your_smtp_password'
+from_email = 'your_from_email'
+to_email = 'your_to_email'
+
+# Set up timezone for sending messages
+timezone_offset = timedelta(hours=-8)  # Pacific Standard Time
+
+# Helper function to send text messages using Nexmo API
+def send_text_message(to_number, message_text):
+    url = 'https://rest.nexmo.com/sms/json'
+    headers = {
+        'Content-Type': 'application/x-www-form-urlencoded'
+    }
+    params = {
+        'api_key': nexmo_api_key,
+        'api_secret': nexmo_api_secret,
+        'from': nexmo_from,
+        'to': to_number,
+        'text': message_text
+    }
+    response = requests.post(url, headers=headers, params=params)
+    response_dict = json.loads(response.text)
+    if response_dict['messages'][0]['status'] == '0':
+        return True
+    else:
+        return False
+
+# Helper function to send emails using SMTP
+def send_email(to_email, subject, body):
+    import smtplib
+    from email.mime.text import MIMEText
+    msg = MIMEText(body)
+    msg['Subject'] = subject
+    msg['From'] = from_email
+    msg['To'] = to_email
+    with smtplib.SMTP(smtp_server, smtp_port) as server:
+        server.starttls()
+        server.login(smtp_username, smtp_password)
+        server.sendmail(from_email, to_email, msg.as_string())
+
+# Helper function to send a message at a specified time
+def send_message_at_time(message, send_time, send_method, recipient):
+    now = datetime.now() + timezone_offset
+    delta = (send_time - now).total_seconds()
+    if delta > 0:
+        print(f"Scheduling message for {send_time}")
+        sleep(delta)
+    if send_method == 'email':
+        send_email(recipient, message['subject'], message['body'])
+    elif send_method == 'text':
+        send_text_message(recipient, message['body'])
+
+# Helper function to send a message immediately
+def send_message(message, send_method, recipient):
+    if send_method == 'email':
+        send_email(recipient, message['subject'], message['body'])
+    elif send_method == 'text':
+        send_text_message(recipient, message['body'])
+
+# Get messages from Agent CRM
+def get_messages_from_agent_crm():
+    url = f"{agent_crm_base_url}/messages"
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f"Bearer {agent_crm_api_key}:{agent_crm_api_secret}"
+    }
+    response = requests.get(url, headers=headers)
+    messages = json.loads(response.text)
+    return messages
+
+# Process messages and send them
+def process_messages(messages):
+    for message in messages:
+        send_time = datetime.strptime(message['send_time'], '%Y-%m-%d %H:%M:%S')
+        send_time_adjusted = send_time + timezone_offset
+        send_method = message['send_method']
+        recipient = message['recipient']
+        content = message['content']
+        if send_method == 'email':
+            subject = content['subject']
+            body = content['body']
+            message_data = {
+                'subject': subject,
+                'body': body
+            }
+        elif send_method == 'text':
+            body = content['body']
+            message_data = {
+                'body': body
+            }
+        send_message_at_time(message_data, send_time_adjusted, send_method, recipient)
+
+# Main function
+def main():
+    messages = get_messages_from_agent_crm()
+    process_messages(messages)
+
+# Run the script
+if __name__ == "__main__":
+    main()
